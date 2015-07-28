@@ -1,6 +1,9 @@
+#This script requires MS GroupPolicy module be installed to run
 param
 (
+    [Parameter(Mandatory=$true)]
     [string]$gpoName,
+    [Parameter(Mandatory=$true)]
     [string] $outputFolder
 )
 
@@ -84,6 +87,3 @@ function GenConfigDoc
 }
 
 ADMToDSC -gpo $gpoName -path $outputFolder 
-
-
-Enter file contents here
