@@ -1,3 +1,6 @@
+#requires -version 4.0
+#requires -Module GroupPolicy
+
 <#
 .Synopsis
    ConvertTo-ADMXtoDSC allows you to get registry keys and values configured within the registry.pol file in existing GPOs
