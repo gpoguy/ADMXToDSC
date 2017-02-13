@@ -1,3 +1,6 @@
+#requires -version 4.0
+#requires -Module GroupPolicy
+
 <#
 .Synopsis
    ConvertTo-ADMXtoDSC allows you to get registry keys and values configured within the registry.pol file in existing GPOs
@@ -34,26 +37,32 @@ function ConvertTo-ADMXtoDSC
         ([Parameter(Mandatory=$true)]
         [string]$gpoName,
         [Parameter(Mandatory=$true)]
+        [Alias("Path")]
         [string] $outputFolder
     )
 
-    Process
+    Begin 
     {
-        #this hash table holds valuename, which we use to name registry resources--guarantees that they are unique
-        $valueNameHashTable = @{}
-        function ADMtoDSC
+        Write-Verbose "Starting: $($MyInvocation.Mycommand)"  
+        #display PSBoundparameters formatted nicely for Verbose output  
+        [string]$pb = ($PSBoundParameters | Format-Table -AutoSize | Out-String).TrimEnd()
+        Write-Verbose "PSBoundparameters: `n$($pb.split("`n").Foreach({"$("`t"*4)$_"}) | Out-String) `n" 
+
+         function ADMtoDSC
         {
+            [cmdletbinding()]
             param
             ( 
                [String] $gpo,
                [String] $path
             )
+
+            Write-Verbose "Starting: $($MyInvocation.Mycommand)" 
             #get policy keys for two main per-computer keys where policy is stored
             #NOTE that this script could be extended to add HKCU per-user keys but as of today--no good mechanisms exist
             #for triggering per-user configuration in DSC
             $policies = Recurse_PolicyKeys -key "HKLM\Software\Policies" -gpo $gpo
             
-
             $policies += Recurse_PolicyKeys -key "HKLM\Software\Microsoft\Windows NT\CurrentVersion" -gpo $gpo
             
             # build the DSC configuration doc
@@ -66,13 +75,16 @@ function ConvertTo-ADMXtoDSC
         # two policy hives mentioned above. Consider rename of the function to be more modular and 
         # powershell'ish
         {
+            [cmdletbinding()]
             param
             (
                 [string]$key,
                 [string]$gpoName
             )
-            
+             Write-Verbose "Starting: $($MyInvocation.Mycommand)" 
             # Get-GPRegistryValue is from the GroupPolicy PowerShell module.
+            Write-Verbose "Getting GPRegistry value $key from $gponame"
+
             $current = Get-GPRegistryValue -Name $gpo -Key $key  -ErrorAction SilentlyContinue
             if ($current -eq $null) #means we didn't get a reference to the key being called--probably beause there's no pol settings under it
             {
@@ -98,15 +110,19 @@ function ConvertTo-ADMXtoDSC
         # consider rename of function - New-DSCDoc
         # add verbose output, error handling and debugging
         {
+            [cmdletbinding()]
             param
             (
                 [string] $path,
                 [string] $gpo,
                 [array] $policies
             )
+
+             Write-Verbose "Starting: $($MyInvocation.Mycommand)" 
             #parse the spaces out of the GPO name, since we use it for the Configuration name
             $gpo = $gpo -replace " ","_"
             $outputFile = "$path\$gpo.ps1"
+            Write-Verbose "Saving config to $outputFile"
             "Configuration `"$gpo`"" | out-file -FilePath $outputFile -Encoding unicode
             '{' | out-file -FilePath $outputFile -Append -Encoding unicode
             "   Import-DscResource –ModuleName PSDesiredStateConfiguration" | out-file -Append -FilePath $outputFile -Encoding unicode
@@ -120,14 +136,14 @@ function ConvertTo-ADMXtoDSC
                 }
                 #this next bit guarantees a unique DSC resource name by adding each registry resource name to a hashtable. If found, we increment the key index and append to resource name
                 $resourceName = ""
-                if ($valueNameHashTable.ContainsKey($regItem.ValueName))
+                if ($script:valueNameHashTable.ContainsKey($regItem.ValueName))
                 {
-                    $valueNameHashTable[$regItem.ValueName] = $valueNameHashTable[$regItem.ValueName]+1
-                    $resourceName = $regItem.ValueName+$valueNameHashTable[$regItem.ValueName]
+                    $script:valueNameHashTable[$regItem.ValueName] = $script:valueNameHashTable[$regItem.ValueName]+1
+                    $resourceName = $regItem.ValueName+$script:valueNameHashTable[$regItem.ValueName]
                 }
                 else
                 {
-                    $valueNameHashTable.Add($regItem.ValueName,0)
+                    $script:valueNameHashTable.Add($regItem.ValueName,0)
                     $resourceName = $regItem.ValueName
                 }
                 # now build the resources
@@ -148,8 +164,20 @@ function ConvertTo-ADMXtoDSC
             '}' | out-file -FilePath $outputFile -Append -Encoding unicode
             $gpo | out-file -FilePath $outputFile -Append -Encoding unicode
         }
+    } #begin
+    
+    Process
+    {
+        #this hash table holds valuename, which we use to name registry resources--guarantees that they are unique
+        $script:valueNameHashTable = @{}
+       
+        Write-Verbose "Analyzing GPO $gponame and saving results to $outputfolder"
         ADMToDSC -gpo $gpoName -path $outputFolder
         #ISE "$outputfolder\$gponame.ps1"
     }
+
+    End {
+        Write-Verbose "Ending: $($MyInvocation.Mycommand)"
+    } #end
 }
 
